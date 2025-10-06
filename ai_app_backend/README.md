@@ -2,6 +2,12 @@
 
 FastAPI backend service for the AI Query Assistant application. This service integrates with Google Gemini AI to answer user questions and persists Q&A history in a PostgreSQL database.
 
+## Local Development Setup
+
+**Important: For local development, use these exact ports:**
+- **Backend**: http://localhost:3001 (FastAPI server, binds to 0.0.0.0:3001)
+- **Frontend**: http://localhost:3000 (React dev server)
+
 ## Features
 
 - **AI-Powered Q&A**: Leverages Google Gemini AI to generate intelligent answers
@@ -10,6 +16,7 @@ FastAPI backend service for the AI Query Assistant application. This service int
 - **CORS Support**: Configurable cross-origin resource sharing
 - **Health Checks**: Built-in health monitoring endpoints
 - **Robust Error Handling**: Comprehensive error handling with user-friendly messages
+- **Graceful Degradation**: Backend starts even if database or Gemini API are not available
 
 ## Architecture
 
@@ -30,13 +37,14 @@ ai_app_backend/
 │   │   └── gemini_service.py  # Gemini AI integration
 │   └── schemas.py          # Pydantic request/response schemas
 ├── requirements.txt        # Python dependencies
-└── .env.example           # Environment variable template
+├── .env.example           # Environment variable template
+└── start_server.sh        # Server startup script
 ```
 
 ## Prerequisites
 
 - **Python**: 3.9 or higher
-- **PostgreSQL**: 12 or higher (running and accessible)
+- **PostgreSQL**: 12 or higher (optional, backend starts without it)
 - **Google Gemini API Key**: Required for AI functionality
 - **pip**: Python package installer
 
@@ -49,13 +57,18 @@ The backend requires the following environment variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `GEMINI_API_KEY` | Google Gemini API key for AI responses | `AIzaSyD...` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql+psycopg2://user:pass@localhost:5432/dbname` |
 
-### Optional Variables
+### Optional Variables (Backend starts without these)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | None (optional) |
 | `CORS_ORIGINS` | Comma-separated list of allowed origins | `http://localhost:3000` |
+
+**Important Notes:**
+- Backend will start and run even if `DATABASE_URL` is not set or database is unavailable
+- Backend will start even if `GEMINI_API_KEY` is not set (but /ask endpoint will return 503)
+- For local development with React frontend, CORS_ORIGINS must include `http://localhost:3000`
 
 ### Setting Up Environment Variables
 
@@ -66,8 +79,13 @@ The backend requires the following environment variables:
 
 2. Edit `.env` and set your values:
    ```bash
-   GEMINI_API_KEY=<your_actual_gemini_api_key>
-   DATABASE_URL=postgresql+psycopg2://myuser:mypassword@localhost:5432/ai_assistant_db
+   # Required for AI functionality
+   GEMINI_API_KEY=your_actual_gemini_api_key_here
+   
+   # Optional - Database (backend starts without this)
+   DATABASE_URL=postgresql+psycopg2://postgres:password@localhost:5432/ai_app_db
+   
+   # Required for frontend communication
    CORS_ORIGINS=http://localhost:3000
    ```
 
@@ -76,6 +94,10 @@ The backend requires the following environment variables:
    - Sign in with your Google account
    - Create a new API key
    - Copy the key to your `.env` file
+
+**Sanity Check:** Backend `.env` should NOT contain frontend-specific variables like:
+- ❌ `REACT_APP_BACKEND_URL` (belongs in frontend)
+- ❌ Any variables starting with `REACT_APP_` (belongs in frontend)
 
 ## Installation & Setup
 
@@ -108,9 +130,17 @@ cp .env.example .env
 nano .env  # or use your preferred editor
 ```
 
-### Step 3: Initialize Database
+**Minimal configuration for local development:**
+```bash
+GEMINI_API_KEY=your_actual_key_here
+CORS_ORIGINS=http://localhost:3000
+```
 
-Make sure your PostgreSQL database is running and accessible, then run:
+### Step 3: Initialize Database (Optional)
+
+**Note:** This step is optional. The backend will start even if the database is not available.
+
+If you want to persist Q&A history, make sure PostgreSQL is running, then:
 
 ```bash
 # Run database initialization script
@@ -138,11 +168,11 @@ Initialization complete!
 ### Step 4: Start the Server
 
 ```bash
-# Run with uvicorn (development)
+# Start server on port 3001, binding to 0.0.0.0
 uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
 
-# Or run directly with Python
-python -m uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
+# Or use the startup script
+./start_server.sh
 ```
 
 **Expected Output:**
@@ -161,7 +191,15 @@ INFO:     Application startup complete
 INFO:     Application startup complete.
 ```
 
-The server will be available at `http://localhost:3001`
+**Note:** If database is not available, you'll see:
+```
+⚠ Starting application without database connection
+```
+The server will still start and run, but Q&A history won't be persisted.
+
+**Server Binding:** The server binds to `0.0.0.0:3001`, making it accessible from:
+- Localhost: http://localhost:3001
+- Any network interface on port 3001
 
 ## API Documentation
 
@@ -245,11 +283,11 @@ curl -X POST http://localhost:3001/ask \
   -d '{"question": "What is the capital of France?"}'
 ```
 
-**Testing the endpoint locally:**
+**Testing from frontend (port 3000):**
 ```bash
-# Make sure backend is running on port 3001
 curl -X POST http://localhost:3001/ask \
   -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
   -d '{"question": "Hello, how are you?"}'
 ```
 
@@ -257,15 +295,6 @@ curl -X POST http://localhost:3001/ask \
 ```json
 {
   "answer": "Hello! I'm doing well, thank you for asking...",
-  "id": 1,
-  "created_at": "2024-01-15T14:23:45.678901+00:00"
-}
-```
-
-**Response Example:**
-```json
-{
-  "answer": "The capital of France is Paris. It is located in the north-central part of the country and is known for its art, culture, and iconic landmarks such as the Eiffel Tower.",
   "id": 1,
   "created_at": "2024-01-15T14:23:45.678901+00:00"
 }
@@ -281,7 +310,7 @@ curl -X POST http://localhost:3001/ask \
 | Status Code | Description | Example |
 |-------------|-------------|---------|
 | `400` | Bad Request - Invalid input | Empty question, validation failure |
-| `500` | Internal Server Error | Database connection failed, unexpected error |
+| `500` | Internal Server Error | Unexpected error |
 | `503` | Service Unavailable | Gemini API not configured, quota exceeded |
 
 **Error Response Format:**
@@ -313,25 +342,24 @@ curl -X POST http://localhost:3001/ask \
 }
 ```
 
-3. **Database Error (500):**
-```json
-{
-  "detail": "Failed to save Q&A record to database"
-}
-```
-
 ## CORS Configuration
 
-The backend is configured to accept requests from the frontend running on `http://localhost:3000` by default.
+**For local development with React frontend on port 3000:**
 
-To allow additional origins, update the `CORS_ORIGINS` environment variable:
-
+Backend `.env` must include:
 ```bash
-# Single origin
 CORS_ORIGINS=http://localhost:3000
+```
 
-# Multiple origins (comma-separated)
-CORS_ORIGINS=http://localhost:3000,http://localhost:3001,https://myapp.com
+**Sanity Check Checklist:**
+- ✅ Backend `.env` contains: `CORS_ORIGINS=http://localhost:3000`
+- ✅ Frontend runs on: http://localhost:3000
+- ✅ Backend runs on: http://localhost:3001
+- ✅ Backend binds to: 0.0.0.0:3001
+
+**For multiple origins (e.g., local + production):**
+```bash
+CORS_ORIGINS=http://localhost:3000,https://myapp.com
 ```
 
 **Important for Production:**
@@ -354,105 +382,11 @@ CREATE TABLE qa_history (
 CREATE INDEX idx_qa_history_created_at ON qa_history(created_at DESC);
 ```
 
+**Note:** If database is not available, the backend still runs but doesn't persist Q&A history.
+
 ## Troubleshooting
 
-### Issue 1: Database Connection Failed
-
-**Symptoms:**
-- Error: "Database connection failed"
-- Server starts but shows database warnings
-- 500 errors when making requests
-
-**Solutions:**
-
-1. **Verify PostgreSQL is running:**
-   ```bash
-   # Check if PostgreSQL is running
-   sudo systemctl status postgresql
-   # Or
-   pg_isready
-   ```
-
-2. **Check DATABASE_URL format:**
-   ```bash
-   # Correct format:
-   postgresql+psycopg2://username:password@host:port/database_name
-   
-   # Example:
-   postgresql+psycopg2://postgres:mypassword@localhost:5432/ai_assistant_db
-   ```
-
-3. **Test database connection:**
-   ```bash
-   # Using psql
-   psql -h localhost -p 5432 -U postgres -d ai_assistant_db
-   ```
-
-4. **Check database credentials:**
-   - Username and password are correct
-   - Database exists
-   - User has necessary permissions
-
-5. **Run init script again:**
-   ```bash
-   python database/init_db.py
-   ```
-
-### Issue 2: GEMINI_API_KEY Not Configured
-
-**Symptoms:**
-- 503 Service Unavailable errors
-- Error: "AI service is not available"
-- `/health` shows `gemini: "unavailable"`
-
-**Solutions:**
-
-1. **Verify API key is set:**
-   ```bash
-   # Check .env file
-   cat .env | grep GEMINI_API_KEY
-   ```
-
-2. **Get a valid API key:**
-   - Visit https://makersuite.google.com/app/apikey
-   - Create a new key
-   - Add to `.env` file
-
-3. **Restart the server** after updating `.env`
-
-4. **Check for whitespace:**
-   ```bash
-   # No spaces around the = sign
-   GEMINI_API_KEY=AIzaSyD...
-   ```
-
-### Issue 3: CORS Errors from Frontend
-
-**Symptoms:**
-- Browser console shows CORS errors
-- Network requests fail with CORS policy errors
-- Error: "Access to fetch has been blocked by CORS policy"
-
-**Solutions:**
-
-1. **Verify CORS_ORIGINS includes frontend URL:**
-   ```bash
-   # In .env file:
-   CORS_ORIGINS=http://localhost:3000
-   ```
-
-2. **Check frontend is running on correct port:**
-   - Frontend should be on port 3000
-   - Backend should be on port 3001
-
-3. **Restart backend after changing CORS settings**
-
-4. **For production, add production URL:**
-   ```bash
-   CORS_ORIGINS=http://localhost:3000,https://your-frontend-domain.com
-   ```
-
-### Issue 4: Port Already in Use
+### Issue 1: Port 3001 Already in Use
 
 **Symptoms:**
 - Error: "Address already in use"
@@ -469,14 +403,156 @@ CREATE INDEX idx_qa_history_created_at ON qa_history(created_at DESC);
    kill -9 <PID>
    ```
 
-2. **Use a different port:**
+2. **Or use a different port (not recommended for local dev):**
    ```bash
    uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
    ```
    
-   Remember to update `REACT_APP_BACKEND_URL` in frontend!
+   **Note:** If you change backend port, update frontend `REACT_APP_BACKEND_URL`!
 
-### Issue 5: Module Import Errors
+### Issue 2: CORS Errors from Frontend
+
+**Symptoms:**
+- Browser console shows CORS errors
+- Network requests from frontend fail
+- Error: "Access to fetch has been blocked by CORS policy"
+
+**Solutions:**
+
+1. **Verify CORS_ORIGINS includes frontend URL:**
+   ```bash
+   cat .env | grep CORS_ORIGINS
+   # Should show: CORS_ORIGINS=http://localhost:3000
+   ```
+
+2. **Verify frontend is on port 3000:**
+   ```bash
+   # Frontend should be at http://localhost:3000
+   curl http://localhost:3000
+   ```
+
+3. **Restart backend after changing CORS settings:**
+   ```bash
+   # Stop server (Ctrl+C), then:
+   uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
+   ```
+
+4. **Test CORS preflight:**
+   ```bash
+   curl -X OPTIONS http://localhost:3001/ask \
+     -H "Origin: http://localhost:3000" \
+     -H "Access-Control-Request-Method: POST" \
+     -v
+   ```
+
+### Issue 3: GEMINI_API_KEY Not Configured
+
+**Symptoms:**
+- 503 Service Unavailable errors on /ask endpoint
+- Error: "AI service is not available"
+- `/health` shows `gemini: "unavailable"`
+
+**Solutions:**
+
+1. **Verify API key is set:**
+   ```bash
+   cat .env | grep GEMINI_API_KEY
+   ```
+
+2. **Get a valid API key:**
+   - Visit https://makersuite.google.com/app/apikey
+   - Create a new key
+   - Add to `.env` file
+
+3. **Restart the server** after updating `.env`
+
+4. **Check for whitespace:**
+   ```bash
+   # No spaces around the = sign
+   GEMINI_API_KEY=AIzaSyD...
+   ```
+
+### Issue 4: Database Connection Failed
+
+**Symptoms:**
+- Warning: "Starting application without database connection"
+- Q&A pairs not being saved
+
+**Note:** This is not a critical error! The backend runs without database.
+
+**Solutions (if you want to persist history):**
+
+1. **Verify PostgreSQL is running:**
+   ```bash
+   # Check if PostgreSQL is running
+   sudo systemctl status postgresql
+   # Or
+   pg_isready
+   ```
+
+2. **Check DATABASE_URL format:**
+   ```bash
+   # Correct format:
+   postgresql+psycopg2://username:password@host:port/database_name
+   
+   # Example:
+   postgresql+psycopg2://postgres:password@localhost:5432/ai_app_db
+   ```
+
+3. **Test database connection:**
+   ```bash
+   # Using psql
+   psql -h localhost -p 5432 -U postgres -d ai_app_db
+   ```
+
+4. **Run init script:**
+   ```bash
+   python database/init_db.py
+   ```
+
+### Issue 5: Frontend Can't Connect to Backend
+
+**Symptoms:**
+- Frontend shows "Cannot connect to backend"
+- Network errors in browser console
+- curl works but browser doesn't
+
+**Solutions:**
+
+1. **Verify backend is running on 0.0.0.0:3001:**
+   ```bash
+   # Backend should bind to 0.0.0.0, not 127.0.0.1
+   uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
+   ```
+
+2. **Check backend health:**
+   ```bash
+   curl http://localhost:3001/health
+   ```
+
+3. **Verify CORS configuration:**
+   ```bash
+   cat .env | grep CORS_ORIGINS
+   # Should be: CORS_ORIGINS=http://localhost:3000
+   ```
+
+4. **Check frontend .env:**
+   ```bash
+   # In frontend directory:
+   cat .env
+   # Should be: REACT_APP_BACKEND_URL=http://localhost:3001
+   ```
+
+5. **Restart both services:**
+   ```bash
+   # Backend (Ctrl+C, then):
+   uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
+   
+   # Frontend (Ctrl+C, then):
+   npm start
+   ```
+
+### Issue 6: Module Import Errors
 
 **Symptoms:**
 - ImportError or ModuleNotFoundError
@@ -500,26 +576,43 @@ CREATE INDEX idx_qa_history_created_at ON qa_history(created_at DESC);
    python --version  # Should be 3.9+
    ```
 
+## Local Development - Sanity Check
+
+**Before starting development, verify this configuration:**
+
+✅ **Backend Configuration:**
+- [ ] Backend `.env` contains: `GEMINI_API_KEY=your_key_here`
+- [ ] Backend `.env` contains: `CORS_ORIGINS=http://localhost:3000`
+- [ ] Backend `.env` optionally contains: `DATABASE_URL=...` (not required)
+- [ ] Backend does NOT contain: `REACT_APP_*` variables
+- [ ] Backend starts with: `uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload`
+- [ ] Backend accessible at: http://localhost:3001/health
+
+✅ **Frontend Configuration:**
+- [ ] Frontend `.env` contains ONLY: `REACT_APP_BACKEND_URL=http://localhost:3001`
+- [ ] Frontend running on: http://localhost:3000
+- [ ] Frontend can reach backend: Check browser console
+
+✅ **After Changes:**
+- [ ] Restart backend after changing backend `.env`
+- [ ] Restart frontend after changing frontend `.env`
+- [ ] Hard refresh browser (Ctrl+Shift+R)
+
 ## Startup Order
 
-For the full application stack to work correctly, start services in this order:
+For the full application stack to work correctly:
 
-1. **Database (PostgreSQL)**: Must be running first
-2. **Backend API**: Starts and connects to database
-3. **Frontend**: Connects to backend API
+1. **Database (PostgreSQL)**: Optional, backend starts without it
+2. **Backend API**: Start on port 3001
+3. **Frontend**: Start on port 3000
 
 ```bash
-# 1. Start PostgreSQL (if not already running)
-sudo systemctl start postgresql
-
-# 2. Initialize database (first time only)
+# Terminal 1: Backend (always bind to 0.0.0.0)
 cd ai_app_backend
-python database/init_db.py
-
-# 3. Start backend server
+source venv/bin/activate
 uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
 
-# 4. In another terminal, start frontend
+# Terminal 2: Frontend
 cd ai_app_frontend
 npm start
 ```
@@ -551,13 +644,7 @@ black src/
 
 ### Generating OpenAPI Spec
 
-The OpenAPI specification is automatically available at `/openapi.json` when the server is running. To save it to a file:
-
-```bash
-python src/api/generate_openapi.py
-```
-
-This will create/update `interfaces/openapi.json`.
+The OpenAPI specification is automatically available at `/openapi.json` when the server is running.
 
 ## Production Deployment
 
@@ -573,7 +660,7 @@ This will create/update `interfaces/openapi.json`.
 
 ```bash
 # Production .env
-GEMINI_API_KEY=<your_production_key>
+GEMINI_API_KEY=your_production_key
 DATABASE_URL=postgresql+psycopg2://user:secure_password@db_host:5432/prod_db
 CORS_ORIGINS=https://your-production-frontend.com
 ```
@@ -605,4 +692,4 @@ gunicorn src.api.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:3
 
 ---
 
-**Note**: This backend is designed to work with the AI Query Assistant frontend. Ensure both services are running for full functionality.
+**Note**: This backend is designed to work with the AI Query Assistant frontend running on port 3000. Ensure both services are configured correctly for local development.

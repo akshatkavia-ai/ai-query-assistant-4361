@@ -36,17 +36,23 @@ source venv/bin/activate
 
 echo ""
 echo "Configuration:"
-echo "  - Host: 0.0.0.0"
+echo "  - Host: 0.0.0.0 (accessible from any interface)"
 echo "  - Port: 3001"
 echo "  - Environment: Development"
+echo "  - CORS: Check .env for CORS_ORIGINS (should include http://localhost:3000)"
 echo ""
-echo "Endpoints:"
+echo "Local Access:"
 echo "  - Health: http://localhost:3001/health"
 echo "  - API Docs: http://localhost:3001/docs"
 echo "  - OpenAPI: http://localhost:3001/openapi.json"
 echo ""
+echo "Sanity Check:"
+echo "  - Backend binds to 0.0.0.0:3001 (accessible from localhost)"
+echo "  - Frontend should be on port 3000"
+echo "  - CORS_ORIGINS in .env should include http://localhost:3000"
+echo ""
 echo "=================================================="
 echo ""
 
-# Start the server
+# Start the server on 0.0.0.0:3001 for local development
 uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
