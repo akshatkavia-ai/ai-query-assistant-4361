@@ -88,7 +88,9 @@ app = FastAPI(
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
 cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
+# Log and print configured CORS origins for easy verification
 logger.info(f"Configuring CORS with origins: {cors_origins}")
+print(f"Configuring CORS with origins: {cors_origins}")
 
 app.add_middleware(
     CORSMiddleware,
