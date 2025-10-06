@@ -69,6 +69,7 @@ The backend requires the following environment variables:
 - Backend will start and run even if `DATABASE_URL` is not set or database is unavailable
 - Backend will start even if `GEMINI_API_KEY` is not set (but /ask endpoint will return 503)
 - For local development with React frontend, CORS_ORIGINS must include `http://localhost:3000`
+- For deployed environments, include all frontend origins (local + production)
 
 ### Setting Up Environment Variables
 
@@ -85,8 +86,12 @@ The backend requires the following environment variables:
    # Optional - Database (backend starts without this)
    DATABASE_URL=postgresql+psycopg2://postgres:password@localhost:5432/ai_app_db
    
-   # Required for frontend communication
+   # Required for frontend communication - include ALL frontend origins
+   # For local development only:
    CORS_ORIGINS=http://localhost:3000
+   
+   # For deployed environment (include both local and production):
+   # CORS_ORIGINS=http://localhost:3000,https://vscode-internal-34006-beta.beta01.cloud.kavia.ai:3000
    ```
 
 3. **Getting a Gemini API Key**:
@@ -98,6 +103,27 @@ The backend requires the following environment variables:
 **Sanity Check:** Backend `.env` should NOT contain frontend-specific variables like:
 - ❌ `REACT_APP_BACKEND_URL` (belongs in frontend)
 - ❌ Any variables starting with `REACT_APP_` (belongs in frontend)
+
+### CORS Configuration
+
+The `CORS_ORIGINS` environment variable must include **all origins** from which your frontend will make requests.
+
+**For Local Development:**
+```bash
+CORS_ORIGINS=http://localhost:3000
+```
+
+**For Deployed Environment (with both local and production frontends):**
+```bash
+CORS_ORIGINS=http://localhost:3000,https://vscode-internal-34006-beta.beta01.cloud.kavia.ai:3000
+```
+
+**Important CORS Rules:**
+- Include the protocol (`http://` or `https://`)
+- Include the port if non-standard (`:3000`, `:3001`, etc.)
+- Match the exact origin from which the frontend makes requests
+- Separate multiple origins with commas (no spaces)
+- Restart backend after changing CORS configuration
 
 ## Installation & Setup
 
@@ -203,13 +229,30 @@ The server will still start and run, but Q&A history won't be persisted.
 
 ## API Documentation
 
-### Interactive API Docs
+### API Base URL vs Documentation Endpoint
+
+**IMPORTANT DISTINCTION:**
+
+- **API Base URL**: `http://localhost:3001` (or `https://vscode-internal-34006-beta.beta01.cloud.kavia.ai:3001` for deployed)
+  - This is what you use in frontend configuration and API calls
+  - Example: `POST {base_url}/ask`
+
+- **Swagger Documentation**: `http://localhost:3001/docs`
+  - This is ONLY for viewing interactive API documentation
+  - Do NOT use `/docs` in your API base URL configuration
+
+**When configuring frontend or making API calls:**
+- ✅ Use: `http://localhost:3001` or `https://your-backend.com:3001`
+- ❌ Do NOT use: `http://localhost:3001/docs` (that's only for documentation)
+
+### Interactive API Documentation
 
 Once the server is running, access the interactive API documentation:
 
-- **Swagger UI**: http://localhost:3001/docs
-- **ReDoc**: http://localhost:3001/redoc
-- **OpenAPI JSON**: http://localhost:3001/openapi.json
+- **API Base**: http://localhost:3001 (use this in code)
+- **Swagger UI**: http://localhost:3001/docs (view documentation only)
+- **ReDoc**: http://localhost:3001/redoc (alternative docs)
+- **OpenAPI JSON**: http://localhost:3001/openapi.json (schema)
 
 ### Endpoints
 
@@ -351,10 +394,18 @@ Backend `.env` must include:
 CORS_ORIGINS=http://localhost:3000
 ```
 
+**For deployed environment (accessible via public URL):**
+
+Backend `.env` must include the public frontend origin:
+```bash
+CORS_ORIGINS=http://localhost:3000,https://vscode-internal-34006-beta.beta01.cloud.kavia.ai:3000
+```
+
 **Sanity Check Checklist:**
-- ✅ Backend `.env` contains: `CORS_ORIGINS=http://localhost:3000`
-- ✅ Frontend runs on: http://localhost:3000
-- ✅ Backend runs on: http://localhost:3001
+- ✅ Backend `.env` contains: `CORS_ORIGINS=http://localhost:3000` (at minimum)
+- ✅ For deployed frontend, add: `,https://your-frontend-host:3000`
+- ✅ Frontend runs on: http://localhost:3000 (or specified public URL)
+- ✅ Backend runs on: http://localhost:3001 (or specified public URL)
 - ✅ Backend binds to: 0.0.0.0:3001
 
 **For multiple origins (e.g., local + production):**
@@ -366,6 +417,7 @@ CORS_ORIGINS=http://localhost:3000,https://myapp.com
 - Always specify exact origins in production
 - Avoid using wildcards (`*`) in production environments
 - Include your deployed frontend URL
+- Restart backend after changing CORS_ORIGINS
 
 ## Database Schema
 
@@ -422,12 +474,13 @@ CREATE INDEX idx_qa_history_created_at ON qa_history(created_at DESC);
 1. **Verify CORS_ORIGINS includes frontend URL:**
    ```bash
    cat .env | grep CORS_ORIGINS
-   # Should show: CORS_ORIGINS=http://localhost:3000
+   # Should include: http://localhost:3000
+   # For deployed: should also include https://your-frontend-host:3000
    ```
 
-2. **Verify frontend is on port 3000:**
+2. **Verify frontend is on correct port:**
    ```bash
-   # Frontend should be at http://localhost:3000
+   # Frontend should be at http://localhost:3000 or specified public URL
    curl http://localhost:3000
    ```
 
@@ -530,17 +583,19 @@ CREATE INDEX idx_qa_history_created_at ON qa_history(created_at DESC);
    curl http://localhost:3001/health
    ```
 
-3. **Verify CORS configuration:**
+3. **Verify CORS configuration includes frontend origin:**
    ```bash
    cat .env | grep CORS_ORIGINS
-   # Should be: CORS_ORIGINS=http://localhost:3000
+   # Should include: http://localhost:3000
+   # For deployed: should also include https://your-frontend-host:3000
    ```
 
-4. **Check frontend .env:**
+4. **Check frontend .env (uses base URL, not /docs):**
    ```bash
    # In frontend directory:
    cat .env
    # Should be: REACT_APP_BACKEND_URL=http://localhost:3001
+   # NOT: REACT_APP_BACKEND_URL=http://localhost:3001/docs
    ```
 
 5. **Restart both services:**
@@ -582,14 +637,16 @@ CREATE INDEX idx_qa_history_created_at ON qa_history(created_at DESC);
 
 ✅ **Backend Configuration:**
 - [ ] Backend `.env` contains: `GEMINI_API_KEY=your_key_here`
-- [ ] Backend `.env` contains: `CORS_ORIGINS=http://localhost:3000`
+- [ ] Backend `.env` contains: `CORS_ORIGINS=http://localhost:3000` (minimum)
+- [ ] For deployed frontend, CORS_ORIGINS also includes: `https://your-frontend-host:3000`
 - [ ] Backend `.env` optionally contains: `DATABASE_URL=...` (not required)
 - [ ] Backend does NOT contain: `REACT_APP_*` variables
 - [ ] Backend starts with: `uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload`
 - [ ] Backend accessible at: http://localhost:3001/health
 
 ✅ **Frontend Configuration:**
-- [ ] Frontend `.env` contains ONLY: `REACT_APP_BACKEND_URL=http://localhost:3001`
+- [ ] Frontend `.env` contains ONLY: `REACT_APP_BACKEND_URL=http://localhost:3001` (or public URL)
+- [ ] Frontend URL does NOT include `/docs` suffix
 - [ ] Frontend running on: http://localhost:3000
 - [ ] Frontend can reach backend: Check browser console
 
@@ -652,7 +709,7 @@ The OpenAPI specification is automatically available at `/openapi.json` when the
 
 1. Set production environment variables
 2. Use strong database credentials
-3. Configure appropriate CORS origins
+3. Configure appropriate CORS origins (include all frontend URLs)
 4. Enable HTTPS/TLS
 5. Set up proper logging
 
@@ -662,7 +719,7 @@ The OpenAPI specification is automatically available at `/openapi.json` when the
 # Production .env
 GEMINI_API_KEY=your_production_key
 DATABASE_URL=postgresql+psycopg2://user:secure_password@db_host:5432/prod_db
-CORS_ORIGINS=https://your-production-frontend.com
+CORS_ORIGINS=https://your-production-frontend.com,https://www.your-production-frontend.com
 ```
 
 ### Running with Gunicorn
@@ -677,7 +734,7 @@ gunicorn src.api.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:3
 
 ## Support & Resources
 
-- **API Documentation**: http://localhost:3001/docs
+- **API Documentation**: http://localhost:3001/docs (view only, not for API calls)
 - **Google Gemini AI**: https://ai.google.dev/
 - **FastAPI Documentation**: https://fastapi.tiangolo.com/
 - **SQLAlchemy Documentation**: https://docs.sqlalchemy.org/
@@ -692,4 +749,4 @@ gunicorn src.api.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:3
 
 ---
 
-**Note**: This backend is designed to work with the AI Query Assistant frontend running on port 3000. Ensure both services are configured correctly for local development.
+**Note**: This backend is designed to work with the AI Query Assistant frontend running on port 3000. Ensure both services are configured correctly for local development and that CORS includes all frontend origins for deployed environments.
