@@ -1,1 +1,3 @@
-# ai-query-assistant-4361
+# Project Repository
+
+This is the initial README file for the project.
