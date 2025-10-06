@@ -33,12 +33,12 @@ class GeminiService:
     with proper error handling and timeout management.
     """
     
-    def __init__(self, model_name: str = "gemini-1.5-flash", timeout: int = 30):
+    def __init__(self, model_name: str = "gemini-2.5-flash", timeout: int = 30):
         """
         Initialize Gemini service.
         
         Args:
-            model_name: Name of the Gemini model to use (default: gemini-1.5-flash)
+            model_name: Name of the Gemini model to use (default: gemini-2.5-flash)
             timeout: Request timeout in seconds
         """
         self.model_name = model_name
