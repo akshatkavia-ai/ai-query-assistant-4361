@@ -245,6 +245,23 @@ curl -X POST http://localhost:3001/ask \
   -d '{"question": "What is the capital of France?"}'
 ```
 
+**Testing the endpoint locally:**
+```bash
+# Make sure backend is running on port 3001
+curl -X POST http://localhost:3001/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Hello, how are you?"}'
+```
+
+**Expected Response:**
+```json
+{
+  "answer": "Hello! I'm doing well, thank you for asking...",
+  "id": 1,
+  "created_at": "2024-01-15T14:23:45.678901+00:00"
+}
+```
+
 **Response Example:**
 ```json
 {
