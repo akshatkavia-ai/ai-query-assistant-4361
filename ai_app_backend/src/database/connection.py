@@ -23,23 +23,56 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is required")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Create engine with connection pooling and health checks
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # Enable connection health checks
-    pool_recycle=3600,   # Recycle connections after 1 hour
-    echo=False           # Set to True for SQL query logging
-)
+# Fix common DATABASE_URL format issues
+if DATABASE_URL:
+    # Replace postgres:// with postgresql+psycopg2://
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+        logger.info("Fixed DATABASE_URL scheme from postgres:// to postgresql+psycopg2://")
 
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Global engine and session factory (created lazily)
+engine = None
+SessionLocal = None
+
+
+def create_db_engine():
+    """
+    Create database engine with connection pooling.
+    
+    Returns:
+        Engine: SQLAlchemy engine or None if DATABASE_URL is not configured
+    """
+    global engine, SessionLocal
+    
+    if not DATABASE_URL:
+        logger.warning("DATABASE_URL not configured. Database functionality will be disabled.")
+        return None
+    
+    try:
+        # Create engine with connection pooling and health checks
+        engine = create_engine(
+            DATABASE_URL,
+            poolclass=QueuePool,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,  # Enable connection health checks
+            pool_recycle=3600,   # Recycle connections after 1 hour
+            echo=False           # Set to True for SQL query logging
+        )
+        
+        # Create session factory
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        
+        logger.info("Database engine created successfully")
+        return engine
+    except Exception as e:
+        logger.error(f"Failed to create database engine: {e}")
+        # Use NullPool for fallback (no connection pooling)
+        engine = None
+        SessionLocal = None
+        return None
 
 
 def get_db():
@@ -53,6 +86,10 @@ def get_db():
         with get_db() as db:
             result = db.execute(query)
     """
+    if SessionLocal is None:
+        logger.error("Database session factory not initialized")
+        raise RuntimeError("Database not configured")
+    
     db = SessionLocal()
     try:
         yield db
@@ -71,6 +108,15 @@ def init_db_with_retry(max_retries=5, retry_delay=2):
     Returns:
         bool: True if connection successful, False otherwise
     """
+    # Create engine if not already created
+    if engine is None:
+        create_db_engine()
+    
+    # If still no engine (DATABASE_URL not configured), return False
+    if engine is None:
+        logger.warning("⚠ Cannot initialize database: DATABASE_URL not configured")
+        return False
+    
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"Attempting database connection (attempt {attempt}/{max_retries})...")
@@ -108,8 +154,25 @@ def get_db_session():
             # Use db session
             pass
     """
+    # Lazy initialization of engine
+    if engine is None:
+        create_db_engine()
+    
+    if SessionLocal is None:
+        logger.error("Database session factory not initialized. DATABASE_URL may be missing.")
+        raise RuntimeError(
+            "Database not configured. Please set DATABASE_URL environment variable."
+        )
+    
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+# Initialize engine on module load (non-blocking)
+try:
+    create_db_engine()
+except Exception as e:
+    logger.warning(f"Failed to initialize database engine on startup: {e}")
